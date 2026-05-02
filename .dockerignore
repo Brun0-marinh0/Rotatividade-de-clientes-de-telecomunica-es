@@ -1,4 +1,3 @@
-
 # Credenciais — NUNCA entram na imagem
 .env
 .env.*
