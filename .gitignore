@@ -14,8 +14,7 @@ venv/
 
 # Dados processados e modelos (versionados via DVC/MLflow)
 data/processed/
-models/trained/
-models/preprocessors/
+models/
 reports/
 
 # Editores
