@@ -1,0 +1,19 @@
+Shape: (7043, 21)
+
+dtypes (contagem):
+object     17
+int64       2
+float64     2
+
+% nulos por coluna:
+TotalCharges    0.16
+
+Target (Churn):
+  No: 5174 (73.5%)
+  Yes: 1869 (26.5%)
+
+Top-5 correlações com Churn:
+tenure            0.352229
+TotalCharges      0.199484
+MonthlyCharges    0.193356
+SeniorCitizen     0.150889
