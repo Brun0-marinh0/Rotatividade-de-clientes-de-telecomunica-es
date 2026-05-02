@@ -1,71 +1,95 @@
 """
-prepare_data.py — Carrega, limpa e divide o dataset de churn de telecomunicações.
+prepare_data.py — Encoding sklearn + split 70/15/15 sobre features do DuckDB.
 
 Uso standalone:
     python src/prepare_data.py
 
-Uso como módulo (importado pelo train.py e evaluate.py):
-    from src.prepare_data import load_and_split
+Uso como módulo:
+    from src.prepare_data import load_raw_splits
 """
 
+import os
 import pandas as pd
+import joblib
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.compose import ColumnTransformer
+
+FEATURES_PATH = "data/processed/features.parquet"
+
+NUMERIC_FEATS = [
+    "tenure", "monthly_charges", "total_charges",
+    "avg_monthly_actual", "monthly_delta", "num_addon_services",
+]
+OHE_FEATS = ["MultipleLines", "InternetService", "Contract", "PaymentMethod"]
+BINARY_FEATS = [
+    "SeniorCitizen", "gender_male", "has_partner", "has_dependents",
+    "has_phone", "paperless_billing", "auto_payment",
+    "has_online_security", "has_online_backup", "has_device_protection",
+    "has_tech_support", "has_streaming_tv", "has_streaming_movies",
+]
 
 
-def load_and_split(
-    path: str = "data/WA_Fn-UseC_-Telco-Customer-Churn.csv",
-    test_size: float = 0.2,
-    seed: int = 42,
-):
-    """
-    Carrega o CSV de churn, faz limpeza básica e divide em treino/teste.
-
-    Parâmetros:
-        path      : caminho para o arquivo CSV
-        test_size : proporção do conjunto de teste (padrão: 20%)
-        seed      : semente aleatória para reprodutibilidade
-
-    Retorna:
-        X_train, X_test, y_train, y_test
-    """
-    df = pd.read_csv(path)
-
-    df = df.dropna(subset=["Churn"])
-
-    df = df[df["Churn"].isin(["Yes", "No"])]
-
-    df["Churn"] = df["Churn"].map({"Yes": 1, "No": 0})
-
-    numeric_cols = ["tenure", "MonthlyCharges", "TotalCharges"]
-    for col in numeric_cols:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    df = df.dropna(subset=numeric_cols)
-
-    categorical_cols = [
-        "gender", "SeniorCitizen", "Partner", "Dependents", "PhoneService",
-        "MultipleLines", "InternetService", "OnlineSecurity", "OnlineBackup",
-        "DeviceProtection", "TechSupport", "StreamingTV", "StreamingMovies",
-        "Contract", "PaperlessBilling", "PaymentMethod"
-    ]
-
-    df_encoded = pd.get_dummies(df, columns=categorical_cols, drop_first=True)
-
-    X = df_encoded.drop(columns=["customerID", "Churn"])
-    y = df_encoded["Churn"]
-
-    return train_test_split(
-        X, y,
-        test_size=test_size,
-        random_state=seed,
-        stratify=y,
+def build_preprocessor():
+    return ColumnTransformer(
+        transformers=[
+            ("num", StandardScaler(), NUMERIC_FEATS),
+            ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), OHE_FEATS),
+        ],
+        remainder="passthrough",  # binary features passam sem transformação
     )
 
 
-if __name__ == "__main__":
-    X_train, X_test, y_train, y_test = load_and_split()
+def load_raw_splits(path: str = FEATURES_PATH):
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"{path} não encontrado. Execute: python src/preprocessing.py"
+        )
+    df = pd.read_parquet(path)
+    feature_cols = NUMERIC_FEATS + OHE_FEATS + BINARY_FEATS
+    X = df[feature_cols]
+    y = df["churn"].astype(int)
 
-    print(f"Total de amostras de treino : {len(X_train)}")
-    print(f"Total de amostras de teste  : {len(X_test)}")
-    print(f"\nDistribuição de classes no treino:")
-    print(y_train.value_counts())
+    X_train, X_temp, y_train, y_temp = train_test_split(
+        X, y, test_size=0.30, random_state=42, stratify=y
+    )
+    X_val, X_test, y_val, y_test = train_test_split(
+        X_temp, y_temp, test_size=0.50, random_state=42, stratify=y_temp
+    )
+    return X_train, X_val, X_test, y_train, y_val, y_test
+
+
+def main():
+    os.makedirs("data/processed", exist_ok=True)
+    os.makedirs("models/preprocessors", exist_ok=True)
+
+    X_train, X_val, X_test, y_train, y_val, y_test = load_raw_splits()
+
+    preprocessor = build_preprocessor()
+    X_train_p = preprocessor.fit_transform(X_train)
+    X_val_p   = preprocessor.transform(X_val)
+    X_test_p  = preprocessor.transform(X_test)
+
+    feat_names = list(preprocessor.get_feature_names_out())
+
+    for split, X, y in [
+        ("train", X_train_p, y_train),
+        ("val",   X_val_p,   y_val),
+        ("test",  X_test_p,  y_test),
+    ]:
+        df_out = pd.DataFrame(X, columns=feat_names)
+        df_out["Churn"] = y.values
+        df_out.to_parquet(f"data/processed/{split}.parquet", index=False)
+
+    joblib.dump(preprocessor, "models/preprocessors/preprocessor.joblib")
+
+    print(f"Train : {X_train_p.shape}  churn={y_train.mean():.1%}")
+    print(f"Val   : {X_val_p.shape}   churn={y_val.mean():.1%}")
+    print(f"Test  : {X_test_p.shape}  churn={y_test.mean():.1%}")
+    print(f"Features totais: {X_train_p.shape[1]}")
+    print("→ data/processed/{train,val,test}.parquet")
+    print("→ models/preprocessors/preprocessor.joblib")
+
+
+if __name__ == "__main__":
+    main()

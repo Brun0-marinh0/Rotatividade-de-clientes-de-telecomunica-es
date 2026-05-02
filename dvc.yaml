@@ -1,0 +1,50 @@
+stages:
+  ingest:
+    cmd: python3 src/ingestion.py
+    deps:
+      - src/ingestion.py
+    outs:
+      - data/raw/telco_churn.parquet
+
+  preprocess:
+    cmd: python3 src/preprocessing.py
+    deps:
+      - src/preprocessing.py
+      - data/raw/telco_churn.parquet
+    outs:
+      - data/processed/features.parquet
+
+  prepare:
+    cmd: python3 src/prepare_data.py
+    deps:
+      - src/prepare_data.py
+      - data/processed/features.parquet
+    outs:
+      - data/processed/train.parquet
+      - data/processed/val.parquet
+      - data/processed/test.parquet
+      - models/preprocessors/preprocessor.joblib
+
+  train:
+    cmd: python3 src/train.py
+    deps:
+      - src/train.py
+      - data/processed/train.parquet
+      - data/processed/val.parquet
+    outs:
+      - models/trained/logistic_regression.joblib
+      - models/trained/random_forest.joblib
+      - models/trained/xgboost.joblib
+
+  evaluate:
+    cmd: python3 src/evaluate.py
+    deps:
+      - src/evaluate.py
+      - data/processed/test.parquet
+      - models/trained/logistic_regression.joblib
+      - models/trained/random_forest.joblib
+      - models/trained/xgboost.joblib
+    outs:
+      - reports/comparison_chart.png
+      - reports/feature_importance.png
+      - reports/model_comparison.md

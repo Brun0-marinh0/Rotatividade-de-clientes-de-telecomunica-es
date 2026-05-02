@@ -1,0 +1,122 @@
+schema: '2.0'
+stages:
+  ingest:
+    cmd: python3 src/ingestion.py
+    deps:
+    - path: src/ingestion.py
+      hash: md5
+      md5: bf9fb22a278110f8c2f83bfdfd536f83
+      size: 1702
+    outs:
+    - path: data/raw/telco_churn.parquet
+      hash: md5
+      md5: b73eb4c17d1ff12fac2a1109360fea6c
+      size: 198082
+  preprocess:
+    cmd: python3 src/preprocessing.py
+    deps:
+    - path: data/raw/telco_churn.parquet
+      hash: md5
+      md5: b73eb4c17d1ff12fac2a1109360fea6c
+      size: 198082
+    - path: src/preprocessing.py
+      hash: md5
+      md5: cecadeb1a70427a13c279c6fd99ed023
+      size: 4680
+    outs:
+    - path: data/processed/features.parquet
+      hash: md5
+      md5: 399dd478db25cf316d4ef6156bd956f6
+      size: 212965
+  prepare:
+    cmd: python3 src/prepare_data.py
+    deps:
+    - path: data/processed/features.parquet
+      hash: md5
+      md5: 399dd478db25cf316d4ef6156bd956f6
+      size: 212965
+    - path: src/prepare_data.py
+      hash: md5
+      md5: ea17b03eb5e8cf9736a437f647dba7d2
+      size: 3174
+    outs:
+    - path: data/processed/test.parquet
+      hash: md5
+      md5: 5958fa3fbe7264c7622a8ea6b2c97c96
+      size: 68857
+    - path: data/processed/train.parquet
+      hash: md5
+      md5: 6e8f05d2fc87d04d3efdd24c59b6d148
+      size: 204930
+    - path: data/processed/val.parquet
+      hash: md5
+      md5: 4742a6a140360bfa9ac0730a48d9aa8f
+      size: 69163
+    - path: models/preprocessors/preprocessor.joblib
+      hash: md5
+      md5: 578fb637d4d60b0cdf5ae2bfe7d14a48
+      size: 4689
+  train:
+    cmd: python3 src/train.py
+    deps:
+    - path: data/processed/train.parquet
+      hash: md5
+      md5: 6e8f05d2fc87d04d3efdd24c59b6d148
+      size: 204930
+    - path: data/processed/val.parquet
+      hash: md5
+      md5: 4742a6a140360bfa9ac0730a48d9aa8f
+      size: 69163
+    - path: src/train.py
+      hash: md5
+      md5: 9814e2d9f9a0d93e55855e9e49470d59
+      size: 10030
+    outs:
+    - path: models/trained/logistic_regression.joblib
+      hash: md5
+      md5: 3292395113ec5c740f630ca08e3a7e52
+      size: 1135
+    - path: models/trained/random_forest.joblib
+      hash: md5
+      md5: 0c54ad27c591baba16b909d53984dec6
+      size: 10210905
+    - path: models/trained/xgboost.joblib
+      hash: md5
+      md5: ee61bea0bd7be7b241f111d1bd7a71e7
+      size: 641738
+  evaluate:
+    cmd: python3 src/evaluate.py
+    deps:
+    - path: data/processed/test.parquet
+      hash: md5
+      md5: 5958fa3fbe7264c7622a8ea6b2c97c96
+      size: 68857
+    - path: models/trained/logistic_regression.joblib
+      hash: md5
+      md5: 3292395113ec5c740f630ca08e3a7e52
+      size: 1135
+    - path: models/trained/random_forest.joblib
+      hash: md5
+      md5: 0c54ad27c591baba16b909d53984dec6
+      size: 10210905
+    - path: models/trained/xgboost.joblib
+      hash: md5
+      md5: ee61bea0bd7be7b241f111d1bd7a71e7
+      size: 641738
+    - path: src/evaluate.py
+      hash: md5
+      md5: 989d7104679503233251c305567ee003
+      size: 5045
+    outs:
+    - path: reports/comparison_chart.png
+      hash: md5
+      md5: 6373b27dde5f2864c8d7080fc8c5c6f4
+      size: 36714
+    - path: reports/feature_importance.png
+      hash: md5
+      md5: 676e765d23cba3a9999f2959fa8f8f72
+      size: 50358
+    - path: reports/model_comparison.md
+      hash: md5
+      md5: c31923eb0bc8294558f843be000361c5
+      size: 575
