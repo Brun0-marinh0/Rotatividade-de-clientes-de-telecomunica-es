@@ -15,11 +15,9 @@ os.chdir(ROOT)
 import streamlit as st
 import pandas as pd
 import numpy as np
-import joblib
 import plotly.express as px
 import plotly.graph_objects as go
 import mlflow
-import mlflow.artifacts
 import mlflow.sklearn
 from mlflow.tracking import MlflowClient
 from dotenv import load_dotenv
@@ -38,14 +36,133 @@ os.environ["DAGSHUB_TOKEN"] = DAGSHUB_TOKEN
 os.environ["MLFLOW_TRACKING_URI"] = MLFLOW_TRACKING_URI
 os.environ["MLFLOW_TRACKING_USERNAME"] = DAGSHUB_USER
 os.environ["MLFLOW_TRACKING_PASSWORD"] = DAGSHUB_TOKEN
+os.environ.setdefault("MLFLOW_HTTP_REQUEST_TIMEOUT", "30")
+os.environ.setdefault("MLFLOW_HTTP_REQUEST_MAX_RETRIES", "1")
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
 # ── Constantes ────────────────────────────────────────────────────────────────
 
 EXPERIMENT_NAME = "telecom-churn"
 REGISTRY_NAME = "TelcoChurnClassifier"
-PREPROCESSOR_ARTIFACT_PATH = "preprocessor/preprocessor.joblib"
-FEATURES_ARTIFACT_PATH = "data/features.parquet"
+
+PREPROCESSOR_MEAN = np.array([
+    32.58086143843966,
+    65.10686712718407,
+    2297.917828118651,
+    65.10741493426562,
+    -0.0005478070815565725,
+    2.0526208858187727,
+], dtype=float)
+PREPROCESSOR_SCALE = np.array([
+    24.554214523436958,
+    29.856691685062827,
+    2261.425442519155,
+    29.93344740452141,
+    2.599587397798743,
+    1.8430586907034945,
+], dtype=float)
+PREPROCESSOR_CATEGORIES = {
+    "MultipleLines": ["No", "No phone service", "Yes"],
+    "InternetService": ["DSL", "Fiber optic", "No"],
+    "Contract": ["Month-to-month", "One year", "Two year"],
+    "PaymentMethod": [
+        "Bank transfer (automatic)",
+        "Credit card (automatic)",
+        "Electronic check",
+        "Mailed check",
+    ],
+}
+
+# Resumo pré-computado para a aba de exploração: evita depender do parquet remoto.
+EDA_SUMMARY = {
+    "kpis": {
+        "total_clients": 7032,
+        "churn_rate": 0.26578498293515357,
+        "tenure_mean": 32.421786120591584,
+        "monthly_charges_mean": 64.79820819112628,
+    },
+    "churn_counts": {"Retido": 5163, "Churn": 1869},
+    "tenure_hist": [
+        {
+            "label": "Churn",
+            "bins": [
+                "[0, 4)", "[4, 8)", "[8, 12)", "[12, 16)", "[16, 20)",
+                "[20, 24)", "[24, 28)", "[28, 32)", "[32, 36)", "[36, 40)",
+                "[40, 44)", "[44, 48)", "[48, 52)", "[52, 56)", "[56, 60)",
+                "[60, 64)", "[64, 68)", "[68, 72)", "[72, 73)",
+            ],
+            "counts": [597, 238, 164, 137, 97, 75, 74, 59, 60, 52, 56, 38, 42, 44, 37, 23, 36, 34, 6],
+        },
+        {
+            "label": "Retido",
+            "bins": [
+                "[0, 4)", "[4, 8)", "[8, 12)", "[12, 16)", "[16, 20)",
+                "[20, 24)", "[24, 28)", "[28, 32)", "[32, 36)", "[36, 40)",
+                "[40, 44)", "[44, 48)", "[48, 52)", "[52, 56)", "[56, 60)",
+                "[60, 64)", "[64, 68)", "[68, 72)", "[72, 73)",
+            ],
+            "counts": [454, 312, 293, 264, 240, 234, 250, 207, 226, 178, 208, 216, 224, 238, 235, 271, 307, 450, 356],
+        },
+    ],
+    "monthly_charges_box": {
+        "Churn": {
+            "q1": 56.15,
+            "median": 79.65,
+            "q3": 94.2,
+            "lowerfence": 18.85,
+            "upperfence": 118.35,
+            "mean": 74.44133226324236,
+        },
+        "Retido": {
+            "q1": 25.1,
+            "median": 64.45,
+            "q3": 88.475,
+            "lowerfence": 18.25,
+            "upperfence": 118.75,
+            "mean": 61.307408483439865,
+        },
+    },
+    "contract_summary": [
+        {"Contract": "Month-to-month", "Churn_label": "Churn", "n": 1655, "pct": 0.4270967741935484},
+        {"Contract": "Month-to-month", "Churn_label": "Retido", "n": 2220, "pct": 0.5729032258064516},
+        {"Contract": "One year", "Churn_label": "Churn", "n": 166, "pct": 0.11277173913043478},
+        {"Contract": "One year", "Churn_label": "Retido", "n": 1306, "pct": 0.8872282608695652},
+        {"Contract": "Two year", "Churn_label": "Churn", "n": 48, "pct": 0.028486646884272996},
+        {"Contract": "Two year", "Churn_label": "Retido", "n": 1637, "pct": 0.971513353115727},
+    ],
+    "service_summary": {
+        "Churn": {
+            "Seg. Online": 0.15783841626538256,
+            "Backup": 0.279828785446763,
+            "Prot. Dispositivo": 0.29159978598180847,
+            "Suporte Téc.": 0.1658640984483681,
+            "Stream. TV": 0.43552701979668274,
+            "Stream. Filmes": 0.4376672017121455,
+        },
+        "Retido": {
+            "Seg. Online": 0.33313964749176833,
+            "Backup": 0.368390470656595,
+            "Prot. Dispositivo": 0.36277358125121056,
+            "Suporte Téc.": 0.33507650590741817,
+            "Stream. TV": 0.36587255471625024,
+            "Stream. Filmes": 0.3705210149138098,
+        },
+    },
+    "corr_summary": {
+        "tenure": -0.35404935895325207,
+        "auto_payment": -0.2104201528241669,
+        "total_charges": -0.19948408356756467,
+        "has_partner": -0.14998192562005805,
+        "num_addon_services": -0.08788191953969927,
+        "gender_male": -0.008544643224946333,
+        "monthly_delta": 0.002160410784180368,
+        "has_phone": 0.011691398865421674,
+        "SeniorCitizen": 0.15054105341568108,
+        "paperless_billing": 0.19145432108004592,
+        "avg_monthly_actual": 0.19203260983069995,
+        "monthly_charges": 0.19285821847007875,
+    },
+}
 
 NUMERIC_FEATS = [
     "tenure", "monthly_charges", "total_charges",
@@ -87,38 +204,51 @@ def _resolve_best_run_id() -> str:
 
         return str(runs.iloc[0]["run_id"])
 
-@st.cache_resource(show_spinner="Carregando modelo e preprocessor…")
+
+class RuntimePreprocessor:
+    # Replica o ColumnTransformer treinado, sem baixar o joblib quebrado do DagsHub.
+    def __init__(self):
+        self.mean_ = PREPROCESSOR_MEAN
+        self.scale_ = PREPROCESSOR_SCALE
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, df: pd.DataFrame):
+        frame = df.loc[:, ALL_FEATS].copy()
+
+        numeric = frame[NUMERIC_FEATS].astype(float).to_numpy()
+        numeric = (numeric - self.mean_) / self.scale_
+
+        cat_parts = []
+        for feat in OHE_FEATS:
+            values = frame[feat].astype(str).to_numpy()
+            cats = PREPROCESSOR_CATEGORIES[feat]
+            encoded = np.column_stack([(values == cat).astype(float) for cat in cats])
+            cat_parts.append(encoded)
+
+        binary = frame[BINARY_FEATS].astype(float).to_numpy()
+        return np.hstack([numeric, *cat_parts, binary])
+
+    def get_feature_names_out(self):
+        names = [f"num__{name}" for name in NUMERIC_FEATS]
+        for feat in OHE_FEATS:
+            names.extend([f"cat__{feat}_{cat}" for cat in PREPROCESSOR_CATEGORIES[feat]])
+        names.extend([f"remainder__{name}" for name in BINARY_FEATS])
+        return np.array(names, dtype=object)
+
+@st.cache_resource(show_spinner="Carregando modelo…")
 def load_model():
     try:
-        run_id = _resolve_best_run_id()
-
         try:
             model = mlflow.sklearn.load_model(f"models:/{REGISTRY_NAME}@champion")
         except Exception:
+            run_id = _resolve_best_run_id()
             model = mlflow.sklearn.load_model(f"runs:/{run_id}/model")
 
-        preprocessor_path = mlflow.artifacts.download_artifacts(
-            run_id=run_id,
-            artifact_path=PREPROCESSOR_ARTIFACT_PATH,
-        )
-        preprocessor = joblib.load(preprocessor_path)
-        return model, preprocessor
+        return model, RuntimePreprocessor()
     except Exception as exc:
-        st.error(f"Falha ao carregar modelo/preprocessor do DagsHub/MLflow: {exc}")
-        st.stop()
-
-
-@st.cache_data(show_spinner="Carregando dados de exploração…")
-def load_features_data():
-    try:
-        run_id = _resolve_best_run_id()
-        features_path = mlflow.artifacts.download_artifacts(
-            run_id=run_id,
-            artifact_path=FEATURES_ARTIFACT_PATH,
-        )
-        return pd.read_parquet(features_path)
-    except Exception as exc:
-        st.error(f"Falha ao carregar dados de exploração do DagsHub/MLflow: {exc}")
+        st.error(f"Falha ao carregar o modelo do DagsHub/MLflow: {exc}")
         st.stop()
 
 
@@ -235,7 +365,7 @@ with st.sidebar:
     st.markdown("**Telecomunicações — Classificação Binária**")
     st.divider()
     model, preprocessor = load_model()
-    st.success("Modelo e preprocessor carregados do DagsHub/MLflow")
+    st.success("Modelo carregado do DagsHub/MLflow")
     st.divider()
     st.markdown(
         "**Métricas (holdout 15%)**\n\n"
@@ -388,21 +518,23 @@ with tab_pred:
 with tab_eda:
     st.header("Exploração dos Dados")
 
-    df = load_features_data()
-    df["Churn_label"] = df["churn"].map({1: "Churn", 0: "Retido"})
+    eda = EDA_SUMMARY
 
     kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-    kpi1.metric("Total de clientes",  f"{len(df):,}")
-    kpi2.metric("Taxa de churn",       f"{df['churn'].mean():.1%}")
-    kpi3.metric("Tenure médio",        f"{df['tenure'].mean():.1f} meses")
-    kpi4.metric("Cobrança média/mês",  f"R$ {df['monthly_charges'].mean():.2f}")
+    kpi1.metric("Total de clientes",  f"{eda['kpis']['total_clients']:,}")
+    kpi2.metric("Taxa de churn",       f"{eda['kpis']['churn_rate']:.1%}")
+    kpi3.metric("Tenure médio",        f"{eda['kpis']['tenure_mean']:.1f} meses")
+    kpi4.metric("Cobrança média/mês",  f"R$ {eda['kpis']['monthly_charges_mean']:.2f}")
 
     st.divider()
     row1_l, row1_r = st.columns(2)
 
     with row1_l:
+        churn_df = pd.DataFrame(
+            [{"Churn_label": label, "count": count} for label, count in eda["churn_counts"].items()]
+        )
         fig = px.pie(
-            df["Churn_label"].value_counts().reset_index(),
+            churn_df,
             names="Churn_label", values="count",
             color="Churn_label",
             color_discrete_map={"Churn": "#e74c3c", "Retido": "#27ae60"},
@@ -413,12 +545,17 @@ with tab_eda:
         st.plotly_chart(fig, use_container_width=True)
 
     with row1_r:
-        fig = px.histogram(
-            df, x="tenure", color="Churn_label",
+        tenure_rows = []
+        for item in eda["tenure_hist"]:
+            for bin_label, count in zip(item["bins"], item["counts"]):
+                tenure_rows.append({"Bin": bin_label, "Churn_label": item["label"], "n": count})
+        tenure_df = pd.DataFrame(tenure_rows)
+        fig = px.bar(
+            tenure_df, x="Bin", y="n", color="Churn_label",
             color_discrete_map={"Churn": "#e74c3c", "Retido": "#27ae60"},
-            barmode="overlay", opacity=0.7, nbins=36,
+            barmode="overlay", opacity=0.7,
             title="Distribuição de Tempo de Contrato (meses)",
-            labels={"tenure": "Meses como cliente", "count": "Clientes"},
+            labels={"Bin": "Meses como cliente", "n": "Clientes", "Churn_label": ""},
         )
         fig.update_layout(height=320, legend_title="")
         st.plotly_chart(fig, use_container_width=True)
@@ -426,23 +563,31 @@ with tab_eda:
     row2_l, row2_r = st.columns(2)
 
     with row2_l:
-        fig = px.box(
-            df, x="Churn_label", y="monthly_charges",
-            color="Churn_label",
-            color_discrete_map={"Churn": "#e74c3c", "Retido": "#27ae60"},
+        fig = go.Figure()
+        for label, color in [("Churn", "#e74c3c"), ("Retido", "#27ae60")]:
+            stats = eda["monthly_charges_box"][label]
+            fig.add_trace(go.Box(
+                name=label,
+                q1=[stats["q1"]],
+                median=[stats["median"]],
+                q3=[stats["q3"]],
+                lowerfence=[stats["lowerfence"]],
+                upperfence=[stats["upperfence"]],
+                mean=[stats["mean"]],
+                boxmean=True,
+                boxpoints=False,
+                marker_color=color,
+            ))
+        fig.update_layout(
             title="Cobrança Mensal por Status",
-            labels={"monthly_charges": "R$/mês", "Churn_label": ""},
-            points="outliers",
+            height=320,
+            showlegend=False,
+            yaxis_title="R$/mês",
         )
-        fig.update_layout(height=320, showlegend=False)
         st.plotly_chart(fig, use_container_width=True)
 
     with row2_r:
-        ct = (
-            df.groupby(["Contract", "Churn_label"])
-            .size().reset_index(name="n")
-        )
-        ct["pct"] = ct.groupby("Contract")["n"].transform(lambda x: x / x.sum())
+        ct = pd.DataFrame(eda["contract_summary"])
         fig = px.bar(
             ct, x="Contract", y="pct", color="Churn_label",
             color_discrete_map={"Churn": "#e74c3c", "Retido": "#27ae60"},
@@ -456,16 +601,9 @@ with tab_eda:
 
     # Serviços adicionais vs churn
     st.subheader("Adoção de Serviços por Status")
-    service_cols = [
-        "has_online_security", "has_online_backup", "has_device_protection",
-        "has_tech_support", "has_streaming_tv", "has_streaming_movies",
-    ]
-    service_labels = [
-        "Seg. Online", "Backup", "Prot. Dispositivo",
-        "Suporte Téc.", "Stream. TV", "Stream. Filmes",
-    ]
-    svc_churn  = df[df["churn"] == 1][service_cols].mean()
-    svc_retain = df[df["churn"] == 0][service_cols].mean()
+    service_labels = list(eda["service_summary"]["Churn"].keys())
+    svc_churn = [eda["service_summary"]["Churn"][label] for label in service_labels]
+    svc_retain = [eda["service_summary"]["Retido"][label] for label in service_labels]
 
     fig = go.Figure()
     fig.add_trace(go.Bar(name="Churn",   x=service_labels, y=svc_churn,  marker_color="#e74c3c"))
@@ -480,11 +618,7 @@ with tab_eda:
 
     # Top correlações numéricas com churn
     st.subheader("Correlação com Churn")
-    num_cols = ["tenure", "monthly_charges", "total_charges",
-                "avg_monthly_actual", "monthly_delta", "num_addon_services",
-                "SeniorCitizen", "has_partner", "has_phone", "paperless_billing",
-                "auto_payment", "gender_male"]
-    corr = df[num_cols + ["churn"]].corr()["churn"].drop("churn").sort_values()
+    corr = pd.Series(eda["corr_summary"], name="churn").sort_values()
     fig = px.bar(
         corr.reset_index(), x="churn", y="index",
         orientation="h",
