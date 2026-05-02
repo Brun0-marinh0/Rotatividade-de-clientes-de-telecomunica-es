@@ -235,6 +235,10 @@ def main():
             log_plots(exp["model"], X_val, y_val, y_pred, y_proba,
                       feat_names, exp["run_name"])
 
+            # Preprocessor e features.parquet para carregamento em runtime
+            mlflow.log_artifact("models/preprocessors/preprocessor.joblib", artifact_path="preprocessor")
+            mlflow.log_artifact("data/processed/features.parquet", artifact_path="data")
+
             # Salva .joblib local (para dvc pipeline)
             local_path = f"models/trained/{exp['run_name']}.joblib"
             joblib.dump(exp["model"], local_path)
