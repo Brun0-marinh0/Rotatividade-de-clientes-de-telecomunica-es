@@ -1,5 +1,6 @@
 FROM python:3.11-slim
 
+
 # ── Sistema ────────────────────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
