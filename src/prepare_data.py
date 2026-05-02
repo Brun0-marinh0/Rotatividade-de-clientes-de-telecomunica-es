@@ -1,5 +1,5 @@
 """
-prepare_data.py — Pré-processa o dataset de churn e salva splits em data/processed/.
+prepare_data.py — Encoding sklearn + split 70/15/15 sobre features do DuckDB.
 
 Uso standalone:
     python src/prepare_data.py
@@ -12,43 +12,43 @@ import os
 import pandas as pd
 import joblib
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import OrdinalEncoder, OneHotEncoder, StandardScaler
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
 
-DATASET_PATH = "data/WA_Fn-UseC_-Telco-Customer-Churn.csv"
+FEATURES_PATH = "data/processed/features.parquet"
 
-BINARY_CATS  = ["gender", "Partner", "Dependents", "PhoneService", "PaperlessBilling"]
-MULTI_CATS   = [
-    "MultipleLines", "InternetService", "OnlineSecurity", "OnlineBackup",
-    "DeviceProtection", "TechSupport", "StreamingTV", "StreamingMovies",
-    "Contract", "PaymentMethod",
+NUMERIC_FEATS = [
+    "tenure", "monthly_charges", "total_charges",
+    "avg_monthly_actual", "monthly_delta", "num_addon_services",
 ]
-NUMERIC_CONT = ["tenure", "MonthlyCharges", "TotalCharges"]
-PASSTHROUGH  = ["SeniorCitizen"]
+OHE_FEATS = ["MultipleLines", "InternetService", "Contract", "PaymentMethod"]
+BINARY_FEATS = [
+    "SeniorCitizen", "gender_male", "has_partner", "has_dependents",
+    "has_phone", "paperless_billing", "auto_payment",
+    "has_online_security", "has_online_backup", "has_device_protection",
+    "has_tech_support", "has_streaming_tv", "has_streaming_movies",
+]
 
 
 def build_preprocessor():
     return ColumnTransformer(
         transformers=[
-            ("num", StandardScaler(), NUMERIC_CONT),
-            ("bin", OrdinalEncoder(), BINARY_CATS),
-            ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), MULTI_CATS),
+            ("num", StandardScaler(), NUMERIC_FEATS),
+            ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), OHE_FEATS),
         ],
-        remainder="passthrough",
+        remainder="passthrough",  # binary features passam sem transformação
     )
 
 
-def load_raw_splits(path=DATASET_PATH):
-    df = pd.read_csv(path)
-    df["TotalCharges"] = pd.to_numeric(df["TotalCharges"], errors="coerce")
-    df = df.dropna(subset=["Churn", "TotalCharges"])
-    df = df[df["Churn"].isin(["Yes", "No"])]
-    df["Churn"] = df["Churn"].map({"Yes": 1, "No": 0})
-    df = df.drop(columns=["customerID"])
-
-    feature_cols = NUMERIC_CONT + BINARY_CATS + MULTI_CATS + PASSTHROUGH
+def load_raw_splits(path: str = FEATURES_PATH):
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"{path} não encontrado. Execute: python src/preprocessing.py"
+        )
+    df = pd.read_parquet(path)
+    feature_cols = NUMERIC_FEATS + OHE_FEATS + BINARY_FEATS
     X = df[feature_cols]
-    y = df["Churn"].astype(int)
+    y = df["churn"].astype(int)
 
     X_train, X_temp, y_train, y_temp = train_test_split(
         X, y, test_size=0.30, random_state=42, stratify=y
@@ -72,7 +72,11 @@ def main():
 
     feat_names = list(preprocessor.get_feature_names_out())
 
-    for split, X, y in [("train", X_train_p, y_train), ("val", X_val_p, y_val), ("test", X_test_p, y_test)]:
+    for split, X, y in [
+        ("train", X_train_p, y_train),
+        ("val",   X_val_p,   y_val),
+        ("test",  X_test_p,  y_test),
+    ]:
         df_out = pd.DataFrame(X, columns=feat_names)
         df_out["Churn"] = y.values
         df_out.to_parquet(f"data/processed/{split}.parquet", index=False)
@@ -80,8 +84,9 @@ def main():
     joblib.dump(preprocessor, "models/preprocessors/preprocessor.joblib")
 
     print(f"Train : {X_train_p.shape}  churn={y_train.mean():.1%}")
-    print(f"Val   : {X_val_p.shape}    churn={y_val.mean():.1%}")
-    print(f"Test  : {X_test_p.shape}   churn={y_test.mean():.1%}")
+    print(f"Val   : {X_val_p.shape}   churn={y_val.mean():.1%}")
+    print(f"Test  : {X_test_p.shape}  churn={y_test.mean():.1%}")
+    print(f"Features totais: {X_train_p.shape[1]}")
     print("→ data/processed/{train,val,test}.parquet")
     print("→ models/preprocessors/preprocessor.joblib")
 

@@ -1,24 +1,34 @@
 FROM python:3.11-slim
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+ENV PYTHONPATH=/app
 
-COPY . .
+COPY requirements-app.txt .
+RUN pip install --no-cache-dir -r requirements-app.txt
 
-ARG DAGSHUB_USER
-ARG DAGSHUB_REPO
-ARG DAGSHUB_TOKEN
+COPY src/   src/
+COPY app/   app/
 
-ENV DAGSHUB_USER=$DAGSHUB_USER
-ENV DAGSHUB_REPO=$DAGSHUB_REPO
-ENV DAGSHUB_TOKEN=$DAGSHUB_TOKEN
-
-RUN python src/evaluate.py
+COPY models/trained/        models/trained/
+COPY models/preprocessors/  models/preprocessors/
+COPY data/processed/features.parquet  data/processed/features.parquet
+COPY reports/               reports/
 
 EXPOSE 8501
 
-CMD ["streamlit", "run", "app.py", \
-     "--server.port=8501", \
-     "--server.address=0.0.0.0"]
+ENV PORT=8501
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -sf http://localhost:${PORT}/_stcore/health || exit 1
+
+CMD ["sh", "-c", \
+     "python3 -m streamlit run app/streamlit_app.py \
+      --server.port=${PORT} \
+      --server.address=0.0.0.0 \
+      --server.headless=true \
+      --browser.gatherUsageStats=false"]
