@@ -14,11 +14,6 @@ RUN pip install --no-cache-dir -r requirements-app.txt
 COPY src/   src/
 COPY app/   app/
 
-COPY models/trained/        models/trained/
-COPY models/preprocessors/  models/preprocessors/
-COPY data/processed/features.parquet  data/processed/features.parquet
-COPY reports/               reports/
-
 EXPOSE 8501
 
 ENV PORT=8501

@@ -18,11 +18,34 @@ import numpy as np
 import joblib
 import plotly.express as px
 import plotly.graph_objects as go
+import mlflow
+import mlflow.artifacts
+import mlflow.sklearn
+from mlflow.tracking import MlflowClient
 from dotenv import load_dotenv
 
 load_dotenv()
 
+# Runtime DagsHub / MLflow config
+DAGSHUB_USER = "RafaelRailton"
+DAGSHUB_REPO = "rotatividade-de-clientes-de-telecomunicacoes"
+DAGSHUB_TOKEN = "446d9e492b12503b1a0d6151fea67f280f5cdcb3"
+MLFLOW_TRACKING_URI = f"https://dagshub.com/{DAGSHUB_USER}/{DAGSHUB_REPO}.mlflow"
+
+os.environ["DAGSHUB_USER"] = DAGSHUB_USER
+os.environ["DAGSHUB_REPO"] = DAGSHUB_REPO
+os.environ["DAGSHUB_TOKEN"] = DAGSHUB_TOKEN
+os.environ["MLFLOW_TRACKING_URI"] = MLFLOW_TRACKING_URI
+os.environ["MLFLOW_TRACKING_USERNAME"] = DAGSHUB_USER
+os.environ["MLFLOW_TRACKING_PASSWORD"] = DAGSHUB_TOKEN
+mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+
 # ── Constantes ────────────────────────────────────────────────────────────────
+
+EXPERIMENT_NAME = "telecom-churn"
+REGISTRY_NAME = "TelcoChurnClassifier"
+PREPROCESSOR_ARTIFACT_PATH = "preprocessor/preprocessor.joblib"
+FEATURES_ARTIFACT_PATH = "data/features.parquet"
 
 NUMERIC_FEATS = [
     "tenure", "monthly_charges", "total_charges",
@@ -39,35 +62,64 @@ ALL_FEATS = NUMERIC_FEATS + OHE_FEATS + BINARY_FEATS
 
 # ── Carregamento de recursos ──────────────────────────────────────────────────
 
-@st.cache_resource(show_spinner="Carregando modelo…")
-def load_model():
-    """Tenta registry MLflow; fallback para .joblib local."""
-    import mlflow
-    import mlflow.sklearn
-    dagshub_user  = os.getenv("DAGSHUB_USER")
-    dagshub_repo  = os.getenv("DAGSHUB_REPO")
-    dagshub_token = os.getenv("DAGSHUB_TOKEN")
-    try:
-        mlflow.set_tracking_uri(
-            f"https://dagshub.com/{dagshub_user}/{dagshub_repo}.mlflow"
-        )
-        os.environ["MLFLOW_TRACKING_USERNAME"] = dagshub_user
-        os.environ["MLFLOW_TRACKING_PASSWORD"] = dagshub_token
-        model = mlflow.sklearn.load_model("models:/TelcoChurnClassifier@champion")
-        return model, "MLflow Registry (champion)"
-    except Exception:
-        model = joblib.load("models/trained/random_forest.joblib")
-        return model, "local (random_forest.joblib)"
-
 
 @st.cache_resource(show_spinner=False)
-def load_preprocessor():
-    return joblib.load("models/preprocessors/preprocessor.joblib")
+def _resolve_best_run_id() -> str:
+    client = MlflowClient()
+
+    try:
+        version = client.get_model_version_by_alias(REGISTRY_NAME, "champion")
+        return version.run_id
+    except Exception:
+        experiment = mlflow.get_experiment_by_name(EXPERIMENT_NAME)
+        experiment_ids = [experiment.experiment_id] if experiment else None
+        runs = mlflow.search_runs(
+            experiment_ids=experiment_ids,
+            order_by=["metrics.roc_auc DESC"],
+        )
+
+        if runs.empty or "metrics.roc_auc" not in runs.columns:
+            raise RuntimeError("Nenhum run com roc_auc foi encontrado no MLflow.")
+
+        runs = runs.dropna(subset=["metrics.roc_auc"])
+        if runs.empty:
+            raise RuntimeError("Nenhum run com roc_auc foi encontrado no MLflow.")
+
+        return str(runs.iloc[0]["run_id"])
+
+@st.cache_resource(show_spinner="Carregando modelo e preprocessor…")
+def load_model():
+    try:
+        run_id = _resolve_best_run_id()
+
+        try:
+            model = mlflow.sklearn.load_model(f"models:/{REGISTRY_NAME}@champion")
+        except Exception:
+            model = mlflow.sklearn.load_model(f"runs:/{run_id}/model")
+
+        preprocessor_path = mlflow.artifacts.download_artifacts(
+            run_id=run_id,
+            artifact_path=PREPROCESSOR_ARTIFACT_PATH,
+        )
+        preprocessor = joblib.load(preprocessor_path)
+        return model, preprocessor
+    except Exception as exc:
+        st.error(f"Falha ao carregar modelo/preprocessor do DagsHub/MLflow: {exc}")
+        st.stop()
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner="Carregando dados de exploração…")
 def load_features_data():
-    return pd.read_parquet("data/processed/features.parquet")
+    try:
+        run_id = _resolve_best_run_id()
+        features_path = mlflow.artifacts.download_artifacts(
+            run_id=run_id,
+            artifact_path=FEATURES_ARTIFACT_PATH,
+        )
+        return pd.read_parquet(features_path)
+    except Exception as exc:
+        st.error(f"Falha ao carregar dados de exploração do DagsHub/MLflow: {exc}")
+        st.stop()
 
 
 # ── Feature engineering (espelha a SQL do DuckDB) ────────────────────────────
@@ -182,9 +234,8 @@ with st.sidebar:
     st.title("📡 Churn Predictor")
     st.markdown("**Telecomunicações — Classificação Binária**")
     st.divider()
-    model, model_source = load_model()
-    preprocessor = load_preprocessor()
-    st.success(f"Modelo carregado\n\n`{model_source}`")
+    model, preprocessor = load_model()
+    st.success("Modelo e preprocessor carregados do DagsHub/MLflow")
     st.divider()
     st.markdown(
         "**Métricas (holdout 15%)**\n\n"
