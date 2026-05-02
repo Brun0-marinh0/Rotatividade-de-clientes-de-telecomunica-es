@@ -23,7 +23,24 @@
       "Bash(python3 /tmp/get-pip.py --user)",
       "Bash(python3 /tmp/get-pip.py --user --break-system-packages)",
       "Bash(python3 -m pip install scikit-learn==1.4.2 pandas==2.2.2 mlflow==2.13.0 xgboost matplotlib pyarrow tabulate huggingface_hub joblib python-dotenv --break-system-packages --quiet)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(curl *)",
+      "Bash(dvc init *)",
+      "Bash(dvc remote *)",
+      "Bash(dvc add *)",
+      "Bash(git rm *)",
+      "Bash(dvc repro *)",
+      "Bash(dvc push *)",
+      "Bash(dvc status *)",
+      "Bash(dvc dag *)",
+      "Bash(streamlit run *)",
+      "Bash(docker --version)",
+      "Bash(docker info *)",
+      "Bash(docker build *)",
+      "Bash(docker run *)",
+      "Bash(docker stop *)",
+      "Bash(docker rm *)",
+      "Bash(grep -v \"^$\")"
     ]
   }
 }

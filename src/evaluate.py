@@ -25,11 +25,18 @@ os.environ["MLFLOW_TRACKING_USERNAME"] = DAGSHUB_USER
 os.environ["MLFLOW_TRACKING_PASSWORD"] = DAGSHUB_TOKEN
 
 
-MODEL_NAMES = ["logistic_regression", "random_forest", "xgboost"]
+MODEL_NAMES   = ["logistic_regression", "random_forest", "xgboost"]
+REGISTRY_NAME = "TelcoChurnClassifier"
 
 
 def load_models():
     return {n: joblib.load(f"models/trained/{n}.joblib") for n in MODEL_NAMES}
+
+
+def load_champion():
+    """Carrega o modelo champion diretamente do MLflow Model Registry."""
+    uri = f"models:/{REGISTRY_NAME}@champion"
+    return mlflow.sklearn.load_model(uri)
 
 
 def evaluate(model, X, y):
@@ -118,11 +125,21 @@ def main():
 
     # model_comparison.md
     best_roc = df.loc[best_name, "ROC-AUC"]
-    md = f"# Model Comparison — Telecom Churn\n\n"
+    md = "# Model Comparison — Telecom Churn\n\n"
     md += df.to_markdown() + "\n\n"
-    md += f"## Veredito\nMelhor modelo por ROC-AUC: **{best_name}** ({best_roc:.4f})\n"
+    md += f"## Veredito\nMelhor modelo por ROC-AUC: **{best_name}** ({best_roc:.4f})\n\n"
+    md += f"Registrado no MLflow Model Registry como `{REGISTRY_NAME}@champion`\n"
     with open("reports/model_comparison.md", "w") as f:
         f.write(md)
+
+    # Verifica que o champion do Registry carrega corretamente
+    print("\nVerificando champion no Model Registry…")
+    try:
+        champion = load_champion()
+        y_ch = champion.predict(X_test)
+        print(f"  ✓ {REGISTRY_NAME}@champion carregado — accuracy spot-check: {accuracy_score(y_test, y_ch):.4f}")
+    except Exception as e:
+        print(f"  [warn] {e}")
 
     print(f"\n→ reports/comparison_chart.png")
     print(f"→ reports/feature_importance.png  (best: {best_name})")

@@ -1,16 +1,40 @@
-model.pkl
-
+# Credenciais — NUNCA entram na imagem
 .env
+.env.*
+!.env.example
 
+# Git e DVC internos
+.git/
+.dvc/cache/
+.dvc/tmp/
+
+# Dados brutos — não necessários para a app (só para o pipeline)
+data/WA_Fn-UseC_-Telco-Customer-Churn.csv
+data/WA_Fn-UseC_-Telco-Customer-Churn.csv.dvc
+data/raw/
+
+# Notebooks e documentos
+notebooks/
+roteiro_projeto_final.pdf
+*.pdf
+
+# Cache Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Ambientes virtuais
 .venv/
 venv/
+env/
 
-.git
-.gitignore
+# Editores
 .vscode/
+.idea/
 .DS_Store
 
-README.md
-*.md
+# Artefatos desnecessários em runtime
+dvc.lock
+model.pkl
