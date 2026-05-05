@@ -26,13 +26,14 @@ flowchart LR
     C --> D[src/preprocessing.py / DuckDB]
     D --> E[data/processed/features.parquet]
     E --> F[src/prepare_data.py]
-    F --> G[data/processed/train|val|test.parquet]
+    F --> G["data/processed/train|val|test.parquet"]
     F --> H[models/preprocessors/preprocessor.joblib]
     G --> I[src/train.py]
     I --> J[MLflow / DagsHub Model Registry]
     I --> K[models/trained/*.joblib]
     I --> L[reports/*]
     J --> M[Streamlit runtime]
+    K --> M
     H --> M
     E --> M
 ```
