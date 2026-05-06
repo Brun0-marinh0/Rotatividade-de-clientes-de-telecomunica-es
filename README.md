@@ -10,8 +10,11 @@ O objetivo de negocio e permitir acoes proativas de retencao, priorizando client
 
 ## Problema escolhido
 
-O dataset modela clientes de uma operadora de telecom. A variavel alvo e binaria:
-[https://www.kaggle.com/datasets/blastchar/telco-customer-churn]([https://seusite.com](https://www.kaggle.com/datasets/blastchar/telco-customer-churn))
+O dataset modela clientes de uma operadora de telecom.
+
+[https://www.kaggle.com/datasets/blastchar/telco-customer-churn](https://www.kaggle.com/datasets/blastchar/telco-customer-churn)
+
+A variavel alvo e binaria:
 
 - `1` = cliente cancelou (`Churn`)
 - `0` = cliente retido
